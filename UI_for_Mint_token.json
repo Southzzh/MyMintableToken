@@ -1,0 +1,212 @@
+import React, { useState, useEffect } from "react";
+import { ethers } from "ethers";
+
+// ABI for the AutoMintVault contract
+const autoMintVaultAbi = [
+  // Only include relevant fragments for interacting
+  "function depositAndMint(uint256 usdcAmount) external",
+  "function withdrawUSDC() external",
+  "function getUSDCBalance() external view returns (uint256)",
+  "function unlockTime() view returns (uint256)",
+  "function usdc() view returns (address)",
+  "function owner() view returns (address)",
+  "function balanceOf(address account) view returns (uint256)",
+  "function TOKEN_PRICE_USD() view returns (uint256)",
+];
+
+// USDC ABI fragment for approve/allowance
+const erc20Abi = [
+  "function approve(address spender, uint256 amount) external returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+];
+
+type Props = {
+  contractAddress: string;
+};
+
+const AutoMintVaultUI: React.FC<Props> = ({ contractAddress }) => {
+  const [provider, setProvider] = useState<ethers.providers.Web3Provider | null>(null);
+  const [signer, setSigner] = useState<ethers.Signer | null>(null);
+  const [account, setAccount] = useState<string>("");
+  const [usdcAddress, setUsdcAddress] = useState<string>("");
+  const [usdcDecimals, setUsdcDecimals] = useState<number>(6);
+  const [vaultBalance, setVaultBalance] = useState<string>("0");
+  const [userVaultTokens, setUserVaultTokens] = useState<string>("0");
+  const [userUSDC, setUserUSDC] = useState<string>("0");
+  const [unlockTime, setUnlockTime] = useState<number>(0);
+  const [isOwner, setIsOwner] = useState<boolean>(false);
+  const [tokenPriceUSD, setTokenPriceUSD] = useState<string>("0");
+  const [mintAmount, setMintAmount] = useState<string>(""); // USDC amount (input)
+  const [pending, setPending] = useState<boolean>(false);
+  const [status, setStatus] = useState<string>("");
+
+  // Connect wallet
+  useEffect(() => {
+    if (window.ethereum) {
+      const _provider = new ethers.providers.Web3Provider(window.ethereum);
+      setProvider(_provider);
+
+      _provider.send("eth_requestAccounts", []).then((accounts: string[]) => {
+        setAccount(accounts[0]);
+        setSigner(_provider.getSigner());
+      });
+    }
+  }, []);
+
+  // Load contract data
+  useEffect(() => {
+    if (!provider || !contractAddress) return;
+    const contract = new ethers.Contract(contractAddress, autoMintVaultAbi, provider);
+
+    async function loadVaultInfo() {
+      const usdcAddr = await contract.usdc();
+      setUsdcAddress(usdcAddr);
+      setUnlockTime(Number(await contract.unlockTime()));
+      setVaultBalance(ethers.utils.formatUnits(await contract.getUSDCBalance(), usdcDecimals));
+      setTokenPriceUSD(ethers.utils.formatUnits(await contract.TOKEN_PRICE_USD(), 18));
+      const ownerAddr = await contract.owner();
+      setIsOwner(account.toLowerCase() === ownerAddr.toLowerCase());
+
+      // User vault token balance
+      const userTokens = await contract.balanceOf(account);
+      setUserVaultTokens(ethers.utils.formatUnits(userTokens, 18));
+    }
+
+    if (account) loadVaultInfo();
+  }, [provider, contractAddress, account, usdcDecimals]);
+
+  // Load USDC balance/decimals
+  useEffect(() => {
+    if (!provider || !usdcAddress || !account) return;
+    const usdc = new ethers.Contract(usdcAddress, erc20Abi, provider);
+
+    async function loadUSDC() {
+      const dec = await usdc.decimals();
+      setUsdcDecimals(dec);
+      const bal = await usdc.balanceOf(account);
+      setUserUSDC(ethers.utils.formatUnits(bal, dec));
+    }
+
+    loadUSDC();
+  }, [provider, usdcAddress, account]);
+
+  // Approve USDC if needed
+  async function ensureUSDCApproval(amount: ethers.BigNumber) {
+    const usdc = new ethers.Contract(usdcAddress, erc20Abi, signer!);
+    const allowance = await usdc.allowance(account, contractAddress);
+    if (allowance.gte(amount)) return;
+    setStatus("Approving USDC...");
+    const tx = await usdc.approve(contractAddress, amount);
+    await tx.wait();
+  }
+
+  // Mint vault tokens
+  async function handleMint(e: React.FormEvent) {
+    e.preventDefault();
+    setPending(true);
+    setStatus("");
+    try {
+      const contract = new ethers.Contract(contractAddress, autoMintVaultAbi, signer!);
+      const usdcAmountWei = ethers.utils.parseUnits(mintAmount, usdcDecimals);
+
+      await ensureUSDCApproval(usdcAmountWei);
+
+      setStatus("Minting vault tokens...");
+      const tx = await contract.depositAndMint(usdcAmountWei);
+      await tx.wait();
+      setStatus("Mint successful!");
+    } catch (err: any) {
+      setStatus(err.message || "Mint failed");
+    }
+    setPending(false);
+  }
+
+  // Owner withdraw USDC
+  async function handleWithdrawUSDC() {
+    setPending(true);
+    setStatus("");
+    try {
+      const contract = new ethers.Contract(contractAddress, autoMintVaultAbi, signer!);
+      setStatus("Withdrawing USDC...");
+      const tx = await contract.withdrawUSDC();
+      await tx.wait();
+      setStatus("Withdraw successful!");
+    } catch (err: any) {
+      setStatus(err.message || "Withdraw failed");
+    }
+    setPending(false);
+  }
+
+  return (
+    <div style={{ maxWidth: 500, margin: "0 auto", fontFamily: "sans-serif" }}>
+      <h2>AutoMintVault Web3 UI</h2>
+      <div>
+        <b>Connected Account:</b> {account || "Not connected"}
+      </div>
+      <div>
+        <b>Vault Contract:</b> {contractAddress}
+      </div>
+      <div>
+        <b>USDC Token:</b> {usdcAddress}
+      </div>
+      <div>
+        <b>Unlock Time:</b> {unlockTime ? new Date(unlockTime * 1000).toLocaleString() : "-"}
+      </div>
+      <div>
+        <b>Vault USDC Balance:</b> {vaultBalance} USDC
+      </div>
+      <div>
+        <b>Your USDC:</b> {userUSDC} USDC
+      </div>
+      <div>
+        <b>Your Vault Tokens:</b> {userVaultTokens}
+      </div>
+      <div>
+        <b>Token Price:</b> ${tokenPriceUSD} per vault token
+      </div>
+
+      <form onSubmit={handleMint} style={{ marginTop: 20 }}>
+        <label>
+          USDC Amount to Deposit & Mint:
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={mintAmount}
+            onChange={e => setMintAmount(e.target.value)}
+            disabled={pending}
+            style={{ marginLeft: 8, width: 120 }}
+          />
+        </label>
+        <button type="submit" disabled={pending || !account || !usdcAddress || !mintAmount}>
+          Deposit & Mint
+        </button>
+      </form>
+
+      {isOwner && (
+        <button
+          style={{ marginTop: 20 }}
+          disabled={pending || !account || Date.now() / 1000 < unlockTime}
+          onClick={handleWithdrawUSDC}
+        >
+          Withdraw USDC (Owner)
+        </button>
+      )}
+
+      {status && <div style={{ marginTop: 16, color: "blue" }}>{status}</div>}
+
+      <div style={{ marginTop: 32, fontSize: "0.95em", color: "#444" }}>
+        <b>How it works:</b>
+        <ul>
+          <li>Deposit USDC to mint vault tokens at fixed price ($1.6 per token).</li>
+          <li>Tokens are minted directly to your wallet.</li>
+          <li>Owner can withdraw USDC after unlock time.</li>
+        </ul>
+      </div>
+    </div>
+  );
+};
+
+export default AutoMintVaultUI;
