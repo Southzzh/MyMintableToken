@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ETH ↔ USDC Swap</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    .box { border: 1px solid #ddd; padding: 20px; width: 300px; margin-bottom: 20px; }
+    button { margin-top: 10px; padding: 8px 16px; cursor: pointer; }
+    input { width: 100%; padding: 8px; margin-top: 5px; }
+  </style>
+</head>
+<body>
+  <h2>ETH ↔ USDC Swap (Fixed Rate $1.16)</h2>
+
+  <!-- Buy ETH -->
+  <div class="box">
+    <h3>Buy ETH with USDC</h3>
+    <label>Amount of ETH to buy:</label>
+    <input type="number" id="buyEthAmount" placeholder="Enter ETH amount">
+    <button onclick="buyEth()">Buy ETH</button>
+  </div>
+
+  <!-- Sell ETH -->
+  <div class="box">
+    <h3>Sell ETH for USDC</h3>
+    <label>Amount of ETH to sell:</label>
+    <input type="number" id="sellEthAmount" placeholder="Enter ETH amount">
+    <button onclick="sellEth()">Sell ETH</button>
+  </div>
+
+  <script>
+    const rate = 1.16; // USDC per ETH (fixed for demo)
+
+    function buyEth() {
+      let ethAmount = parseFloat(document.getElementById("buyEthAmount").value);
+      if (isNaN(ethAmount) || ethAmount <= 0) {
+        alert("Enter a valid ETH amount.");
+        return;
+      }
+      let usdcCost = ethAmount * rate;
+      alert(`Buying ${ethAmount} ETH will cost ${usdcCost.toFixed(2)} USDC.`);
+      // here you'd call your smart contract function
+    }
+
+    function sellEth() {
+      let ethAmount = parseFloat(document.getElementById("sellEthAmount").value);
+      if (isNaN(ethAmount) || ethAmount <= 0) {
+        alert("Enter a valid ETH amount.");
+        return;
+      }
+      let usdcReturn = ethAmount * rate;
+      alert(`Selling ${ethAmount} ETH will return ${usdcReturn.toFixed(2)} USDC.`);
+      // here you'd call your smart contract function
+    }
+  </script>
+</body>
+</html>
